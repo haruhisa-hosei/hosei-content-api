@@ -1,52 +1,38 @@
-import { withCors, json, textOut } from "./core/http.js";
-import { VERSION } from "./config.js";
-
-import { handlePosts } from "./routes/posts.js";
-import { handleMedia } from "./routes/media.js";
-import { handleImport } from "./routes/import.js";
-import { handleDebugLast } from "./routes/debugLast.js";
-
-// ★追加する（次の手順で作る）
+// src/index.js
 import { handleLineWebhook } from "./routes/lineWebhook.js";
+
+function textOut(s, status = 200, headers = {}) {
+  return new Response(s, {
+    status,
+    headers: { "Content-Type": "text/plain; charset=utf-8", ...headers },
+  });
+}
 
 export default {
   async fetch(req, env, ctx) {
-    if (req.method === "OPTIONS") return new Response("", { headers: withCors() });
-
     const url = new URL(req.url);
 
+    if (req.method === "OPTIONS") {
+      return new Response("", {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type,Authorization",
+        },
+      });
+    }
+
     if (url.pathname === "/health") {
-      return json({ ok: true, version: VERSION });
-    }
-
-    if (url.pathname === "/debug-last") {
-      return await handleDebugLast(url, env);
-    }
-
-    if (url.pathname.startsWith("/media/") && req.method === "GET") {
-      return await handleMedia(url, req, env);
-    }
-
-    if (/^\/api\/(news|voice|archive)$/.test(url.pathname)) {
-      const t = url.pathname.split("/").pop();
-      const u = new URL(url.toString());
-      u.pathname = "/posts";
-      u.searchParams.set("type", t);
-      return await handlePosts(u, env);
+      return new Response(
+        JSON.stringify({ ok: true, version: "modular-linewebhook-only" }),
+        { headers: { "Content-Type": "application/json; charset=utf-8" } }
+      );
     }
 
     if (url.pathname === "/line-webhook" && req.method === "POST") {
       return await handleLineWebhook(req, env, ctx);
     }
 
-    if (url.pathname === "/posts") {
-      return await handlePosts(url, env);
-    }
-
-    if (url.pathname === "/import") {
-      return await handleImport(env);
-    }
-
-    return textOut("hosei api alive");
+    return textOut("alive");
   },
 };
