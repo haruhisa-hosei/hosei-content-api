@@ -395,6 +395,9 @@ async function openaiResponsesJsonSchema(env, { system, user, schemaName = "hose
   const model = env.OPENAI_MODEL || "gpt-5-mini-2025-08-07";
   if (!env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 
+  // NOTE (2026-02): In the Responses API, structured output moved from
+  //   response_format -> text.format
+  // Ref: https://platform.openai.com/docs/api-reference/responses/create
   const jsonSchema = {
     name: schemaName,
     strict: true,
@@ -417,7 +420,15 @@ async function openaiResponsesJsonSchema(env, { system, user, schemaName = "hose
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    response_format: { type: "json_schema", json_schema: jsonSchema },
+    text: {
+      format: {
+        type: "json_schema",
+        // Responses API expects these fields at the top level (not nested).
+        name: jsonSchema.name,
+        strict: jsonSchema.strict,
+        schema: jsonSchema.schema,
+      },
+    },
     max_output_tokens: maxTokens,
   };
 
