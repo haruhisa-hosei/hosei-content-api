@@ -1,5 +1,7 @@
-import { nz, short, safeJsonParse } from "../core/strings.js";
+// src/adapters/openai.js
 import { kvLogDebug } from "./kvDebug.js";
+import { errorText } from "../core/errors.js";
+import { short } from "../core/strings.js";
 import { TTL_DEBUG } from "../keys/kvKeys.js";
 
 function pickResponsesUsage(data) {
@@ -12,15 +14,8 @@ function pickResponsesUsage(data) {
   };
 }
 
-function shouldDebugOpenAI(env) {
-  return (env.DEBUG_OPENAI || "") === "1";
-}
-function shouldDebugBody(env) {
-  return (env.DEBUG_LOG_BODY || "") === "1";
-}
-
 function pickOutputTextFromResponses(data) {
-  const ot = nz(data?.output_text).trim();
+  const ot = (data?.output_text ?? "").toString().trim();
   if (ot) return ot;
 
   const out = data?.output;
@@ -29,7 +24,7 @@ function pickOutputTextFromResponses(data) {
       const contents = item?.content;
       if (!Array.isArray(contents)) continue;
       for (const c of contents) {
-        const t = nz(c?.text).trim();
+        const t = (c?.text ?? "").toString().trim();
         if (t) return t;
       }
     }
@@ -37,24 +32,44 @@ function pickOutputTextFromResponses(data) {
   return "";
 }
 
-export async function openaiResponsesJsonSchema(env, { system, user, schemaName = "hosei_copy_schema", maxTokens = 400 }) {
+function safeJsonParse(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+function shouldDebugOpenAI(env) {
+  return (env.DEBUG_OPENAI || "") === "1";
+}
+function shouldDebugBody(env) {
+  return (env.DEBUG_LOG_BODY || "") === "1";
+}
+
+/**
+ * Responses API (Structured Outputs)
+ * NOTE: response_format は廃止 → text.format へ移動
+ * ref: https://platform.openai.com/docs/api-reference/responses/create
+ */
+export async function openaiResponsesJsonSchema(
+  env,
+  { system, user, schemaName = "hosei_copy_schema", maxTokens = 450 }
+) {
   const model = env.OPENAI_MODEL || "gpt-5-mini-2025-08-07";
   if (!env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
 
-  const jsonSchema = {
-    name: schemaName,
-    strict: true,
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        ja: { type: "string" },
-        en: { type: "string" },
-        btnJa: { type: "string" },
-        btnEn: { type: "string" },
-      },
-      required: ["ja", "en", "btnJa", "btnEn"],
+  // JSON Schema本体（strict）
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      ja: { type: "string" },
+      en: { type: "string" },
+      btnJa: { type: "string" },
+      btnEn: { type: "string" },
     },
+    required: ["ja", "en", "btnJa", "btnEn"],
   };
 
   const body = {
@@ -63,7 +78,15 @@ export async function openaiResponsesJsonSchema(env, { system, user, schemaName 
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    response_format: { type: "json_schema", json_schema: jsonSchema },
+    // ✅ ここが変更点：response_format → text.format
+    text: {
+      format: {
+        type: "json_schema",
+        name: schemaName,
+        strict: true,
+        schema,
+      },
+    },
     max_output_tokens: maxTokens,
   };
 
@@ -103,7 +126,7 @@ export async function openaiResponsesJsonSchema(env, { system, user, schemaName 
   const data = await res.json();
   const outText = pickOutputTextFromResponses(data);
   const usage = pickResponsesUsage(data);
-  const respId = nz(data?.id);
+  const respId = (data?.id ?? "").toString();
 
   if (shouldDebugOpenAI(env)) {
     await kvLogDebug(
@@ -165,10 +188,10 @@ export async function openaiResponsesJsonSchema(env, { system, user, schemaName 
     throw new Error("OpenAI JSON parse failed (despite json_schema)");
   }
 
-  const ja = nz(obj.ja).trim();
-  const en = nz(obj.en).trim();
-  const btnJa = nz(obj.btnJa).trim();
-  const btnEn = nz(obj.btnEn).trim();
+  const ja = (obj.ja ?? "").toString().trim();
+  const en = (obj.en ?? "").toString().trim();
+  const btnJa = (obj.btnJa ?? "").toString().trim();
+  const btnEn = (obj.btnEn ?? "").toString().trim();
 
   if (!ja || !btnJa || !btnEn) {
     await kvLogDebug(
