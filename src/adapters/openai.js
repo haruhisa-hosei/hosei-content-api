@@ -1,3 +1,4 @@
+// src/adapters/openai.js
 import { nz, short, safeJsonParse } from "../core/strings.js";
 import { kvLogDebug } from "./kvDebug.js";
 import { TTL_DEBUG } from "../keys/kvKeys.js";
@@ -20,20 +21,37 @@ function shouldDebugBody(env) {
 }
 
 function pickOutputTextFromResponses(data) {
+  // Responses API returns structured output that varies by model and format.
+  // Try common fields first, then scan the output tree.
+
+  // 1) output_text (common)
   const ot = nz(data?.output_text).trim();
   if (ot) return ot;
 
+  // 2) text.value (some variants)
+  const tv = nz(data?.text?.value ?? data?.text).trim();
+  if (tv) return tv;
+
+  // 3) Scan output[] -> content[]
   const out = data?.output;
   if (Array.isArray(out)) {
     for (const item of out) {
+      const itText = nz(item?.text ?? item?.output_text).trim();
+      if (itText) return itText;
+
       const contents = item?.content;
-      if (!Array.isArray(contents)) continue;
-      for (const c of contents) {
-        const t = nz(c?.text).trim();
-        if (t) return t;
+      if (Array.isArray(contents)) {
+        for (const c of contents) {
+          const direct = nz(c?.text ?? c?.value).trim();
+          if (direct) return direct;
+
+          const nested = nz(c?.text?.value ?? c?.text).trim();
+          if (nested) return nested;
+        }
       }
     }
   }
+
   return "";
 }
 
