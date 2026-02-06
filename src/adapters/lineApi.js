@@ -1,86 +1,55 @@
-// src/adapters/lineApi.js
-import { kvLogDebug } from "./kvDebug.js";
-import { TTL_DEBUG } from "../keys/kvKeys.js";
-import { errorText } from "../core/errors.js";
+import { kvLogDebug } from "../utils/kvDebug.js";
 
-export async function lineReply(env, replyToken, text) {
-  const url = "https://api.line.me/v2/bot/message/reply";
-  const res = await fetch(url, {
+const LINE_API = "https://api.line.me/v2/bot";
+
+async function lineApiFetch(env, path, body) {
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
+    throw new Error("Missing LINE_CHANNEL_ACCESS_TOKEN (Cloudflare Worker secret)");
+  }
+
+  const res = await fetch(`${LINE_API}${path}`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      replyToken,
-      messages: [{ type: "text", text }],
-    }),
+    body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`LINE reply failed: ${res.status} ${t.slice(0, 200)}`);
-  }
+  const text = await res.text();
+  if (!res.ok) throw new Error(`LINE API ${res.status}: ${text}`);
+  return text ? JSON.parse(text) : { ok: true };
 }
 
-export async function linePush(env, to, text) {
-  const url = "https://api.line.me/v2/bot/message/push";
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({
-      to,
-      messages: [{ type: "text", text }],
-    }),
-  });
-
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`LINE push failed: ${res.status} ${t.slice(0, 200)}`);
-  }
+export async function lineReply(env, replyToken, messages) {
+  return lineApiFetch(env, "/message/reply", { replyToken, messages });
 }
 
-/**
- * ✅ ③ push fallback 付き返信
- * replyToken が死んでる/期限切れ等で reply が落ちたら push で救済
- */
-export async function lineReplyWithFallback(env, replyToken, text, fallbackToUserId) {
+export async function linePush(env, to, messages) {
+  return lineApiFetch(env, "/message/push", { to, messages });
+}
+
+// reply失敗時にpushでフォールバック（replyToken失効対策）
+// 宛先は ADMIN_USER_ID を優先（あなたの運用では管理者＝自分）
+export async function lineReplyWithFallback(env, replyToken, userId, messages) {
   try {
-    await lineReply(env, replyToken, text);
-  } catch (e) {
-    await kvLogDebug(
-      env,
-      {
-        where: "lineReplyWithFallback:reply_failed",
-        err: errorText(e),
-        textPreview: (text || "").slice(0, 160),
-        ts: Date.now(),
-      },
-      TTL_DEBUG,
-      "line"
-    );
+    const r = await lineReply(env, replyToken, messages);
+    await kvLogDebug(env, "line", "lineReply_ok", { ok: true });
+    return r;
+  } catch (err) {
+    await kvLogDebug(env, "line", "lineReply_failed", String(err && (err.stack || err.message || err)));
 
-    if (!fallbackToUserId) throw e;
-
-    try {
-      await linePush(env, fallbackToUserId, text);
-      await kvLogDebug(
-        env,
-        { where: "lineReplyWithFallback:pushed", ts: Date.now() },
-        TTL_DEBUG,
-        "line"
-      );
-    } catch (e2) {
-      await kvLogDebug(
-        env,
-        { where: "lineReplyWithFallback:push_failed", err: errorText(e2), ts: Date.now() },
-        TTL_DEBUG,
-        "line"
-      );
-      throw e2;
+    const to = env.ADMIN_USER_ID || userId;
+    if (to) {
+      try {
+        const r2 = await linePush(env, to, messages);
+        await kvLogDebug(env, "line", "linePush_fallback_ok", { ok: true, to: to.slice(0, 6) + "..." });
+        return r2;
+      } catch (err2) {
+        await kvLogDebug(env, "line", "linePush_fallback_failed", String(err2 && (err2.stack || err2.message || err2)));
+      }
     }
+
+    throw err;
   }
 }
