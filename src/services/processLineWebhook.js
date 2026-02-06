@@ -1,32 +1,30 @@
-// src/services/processLineWebhook.js
-import { errorText } from "../core/errors.js";
-import { handleLineTextEvent, handleLineImageEvent, handleLineVideoEvent } from "./lineHandlers.js";
+import { kvLogDebug } from "../utils/kvDebug.js";
+import { handleLineTextEvent, handleLineImageEvent } from "./lineHandlers.js";
 
 export async function processLineWebhook(env, payload) {
-  const events = payload?.events || [];
+  try {
+    const events = payload?.events || [];
+    for (const ev of events) {
+      const type = ev?.type;
+      const msgType = ev?.message?.type;
 
-  for (const event of events) {
-    try {
-      const userId = event?.source?.userId;
-      if (!userId) continue;
+      if (type !== "message") continue;
 
-      // 管理者以外は無視
-      if (env.ADMIN_USER_ID && userId !== env.ADMIN_USER_ID) continue;
-
-      const msg = event?.message;
-      if (!msg?.type) continue;
-
-      if (msg.type === "text") {
-        await handleLineTextEvent(env, event, msg.text);
-      } else if (msg.type === "image") {
-        await handleLineImageEvent(env, event);
-      } else if (msg.type === "video") {
-        await handleLineVideoEvent(env, event);
-      } else {
-        // 他は今は無視
+      if (msgType === "text") {
+        await handleLineTextEvent(env, ev);
+      } else if (msgType === "image") {
+        await handleLineImageEvent(env, ev);
       }
-    } catch (e) {
-      console.error("processLineWebhook:event error", errorText(e));
     }
+  } catch (err) {
+    console.error("processLineWebhook fatal:", err);
+    try {
+      await kvLogDebug(
+        env,
+        "line",
+        "processLineWebhook:fatal",
+        String(err && (err.stack || err.message || err))
+      );
+    } catch {}
   }
 }
