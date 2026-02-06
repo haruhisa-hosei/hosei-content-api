@@ -1,7 +1,6 @@
 name = "hosei-content-api"
 main = "src/index.js"
 compatibility_date = "2026-02-06"
-compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
 binding = "DB"
