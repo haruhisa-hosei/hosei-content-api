@@ -2,6 +2,7 @@
 import { nz, short, safeJsonParse } from "../core/strings.js";
 import { kvLogDebug } from "./kvDebug.js";
 import { TTL_DEBUG } from "../keys/kvKeys.js";
+import { fetchWithTimeout } from "../core/fetchTimeout.js";
 
 function pickResponsesUsage(data) {
   const u = data?.usage || data?.response?.usage || null;
@@ -42,6 +43,19 @@ function pickOutputTextFromResponses(data) {
       const contents = item?.content;
       if (Array.isArray(contents)) {
         for (const c of contents) {
+          // json_schema responses may come back as "output_json" or "json" payloads
+          // depending on model/version.
+          if (c && typeof c === "object") {
+            const jsonPayload = c?.json ?? c?.output_json ?? c?.parsed ?? null;
+            if (jsonPayload && typeof jsonPayload === "object") {
+              try {
+                return JSON.stringify(jsonPayload);
+              } catch {
+                // ignore
+              }
+            }
+          }
+
           const direct = nz(c?.text ?? c?.value).trim();
           if (direct) return direct;
 
@@ -98,14 +112,18 @@ export async function openaiResponsesJsonSchema(env, { system, user, schemaName 
   };
 
   const t0 = Date.now();
-  const res = await fetch("https://api.openai.com/v1/responses", {
+  const res = await fetchWithTimeout(
+    "https://api.openai.com/v1/responses",
+    {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify(body),
-  });
+    },
+    12000
+  );
 
   const xrid = res.headers.get("x-request-id") || res.headers.get("x-request_id") || "";
   const durMs = Date.now() - t0;
