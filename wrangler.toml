@@ -1,0 +1,16 @@
+name = "hosei-content-api"
+main = "src/index.js"
+compatibility_date = "2026-02-06"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hosei_content"
+database_id = "247c147a-64ba-4033-9e63-29530fd2fe66"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "ee72f32335cb4df2986198b035bf63a2"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "hosei-media"
