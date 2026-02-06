@@ -1,6 +1,8 @@
 // src/services/processLineWebhook.js
 import { errorText } from "../core/errors.js";
 import { handleLineTextEvent } from "./lineHandlers.js";
+// 将来追加するだけ（今は未使用でもOK）
+// import { handleLineImageEvent, handleLineVideoEvent } from "./lineHandlers.js";
 
 export async function processLineWebhook(env, payload) {
   const events = payload?.events || [];
@@ -14,14 +16,17 @@ export async function processLineWebhook(env, payload) {
       if (env.ADMIN_USER_ID && userId !== env.ADMIN_USER_ID) continue;
 
       const msg = event?.message;
-      if (!msg?.type) continue;
+      const type = msg?.type;
+      if (!type) continue;
 
-      if (msg.type === "text") {
+      if (type === "text") {
         await handleLineTextEvent(env, event, msg.text);
-      } else {
-        // image/video等はここで分岐して後日拡張
-        // 今は「壊さず」なので無視でOK
+        continue;
       }
+
+      // image/video等は「壊さず」なので今は何もしない
+      // if (type === "image") await handleLineImageEvent(env, event, msg);
+      // if (type === "video") await handleLineVideoEvent(env, event, msg);
     } catch (e) {
       console.error("processLineWebhook:event error", errorText(e));
     }
