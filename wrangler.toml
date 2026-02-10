@@ -1,6 +1,21 @@
 name = "hosei-content-api"
-main = "src/index.js"
-compatibility_date = "2026-02-06"
+main = "src/worker.js"
+compatibility_date = "2026-02-11"
+
+[vars]
+# Models
+OPENAI_MODEL = "gpt-5-mini-2025-08-07"
+OPENAI_VISION_MODEL = "gpt-4.1-mini"
+GEMINI_MODEL = "gemini-1.5-flash"
+
+# Media
+R2_PUBLIC_BASE = "https://media.haruhisa-hosei.com/"
+IMAGE_GITHUB_MAX_BYTES = "2500000"
+
+# GitHub (image upload target)
+GITHUB_OWNER = "haruhisa-hosei"
+GITHUB_REPO = "haruhisa-hosei.com"
+GITHUB_BRANCH = "main"
 
 [[d1_databases]]
 binding = "DB"
