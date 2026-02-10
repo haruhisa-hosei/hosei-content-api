@@ -14,7 +14,7 @@ IMAGE_GITHUB_MAX_BYTES = "2500000"
 
 # GitHub (image upload target)
 GITHUB_OWNER = "haruhisa-hosei"
-GITHUB_REPO = "haruhisa-hosei.com"
+GITHUB_REPO = "haruhisa-hosei-site"
 GITHUB_BRANCH = "main"
 
 [[d1_databases]]
