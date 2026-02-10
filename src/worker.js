@@ -207,10 +207,18 @@ function arrayBufferToBase64(buf) {
 function detectTypeAndContent(text) {
   const t = nz(text).trim();
   let type = "voice";
+  let explicit = false;
 
-  if (/^(ニュース|ニュース：|N：|N:|に：|に:)/i.test(t)) type = "news";
-  else if (/^(アーカイブ|アーカイブ：|A：|A:|あ：|あ:)/i.test(t)) type = "archive";
-  else if (/^(V：|V:|v：|v:|ボイス|voice|VOICE)[:：\s]/.test(t)) type = "voice";
+  if (/^(ニュース|ニュース：|N：|N:|に：|に:)/i.test(t)) {
+    type = "news";
+    explicit = true;
+  } else if (/^(アーカイブ|アーカイブ：|A：|A:|あ：|あ:)/i.test(t)) {
+    type = "archive";
+    explicit = true;
+  } else if (/^(V：|V:|v：|v:|ボイス|voice|VOICE)[:：\s]/.test(t)) {
+    type = "voice";
+    explicit = true;
+  }
 
   const content = t
     .replace(
@@ -219,8 +227,9 @@ function detectTypeAndContent(text) {
     )
     .trim();
 
-  return { type, content };
+  return { type, content, explicit };
 }
+
 
 // ✅ manual type-only command (for pending image)
 function parseTypeOnlyCommand(text) {
@@ -1148,6 +1157,40 @@ function keyPendingImage(userId) {
 function keyPendingVideo(userId) {
   return `pending_video:${userId}`;
 }
+
+// -----------------------------
+// ✅ Next-type KV (set destination before sending image)
+//  - User can send: NEXT:voice / NEXT:news / NEXT:archive (also 日本語)
+//  - Applied to the next incoming image, then auto-cleared
+// -----------------------------
+const TTL_NEXTTYPE = 30 * 60; // 30min
+function keyNextType(userId) {
+  return `next_type:${userId}`;
+}
+function normalizeTypeWord(raw) {
+  const t = nz(raw).trim().toLowerCase();
+  if (t === "news" || t === "voice" || t === "archive") return t;
+  if (t.includes("ニュー")) return "news";
+  if (t.includes("アーカ")) return "archive";
+  if (t.includes("ボイ") || t.includes("voice")) return "voice";
+  return null;
+}
+function parseNextTypeCommand(text) {
+  const s = nz(text).trim();
+  const m = s.match(/^NEXT\s*[:：]\s*(.+)$/i);
+  if (!m) return null;
+  return normalizeTypeWord(m[1]);
+}
+async function setNextType(env, userId, type) {
+  if (!type) return;
+  await env.KV.put(keyNextType(userId), type, { expirationTtl: TTL_NEXTTYPE });
+}
+async function consumeNextType(env, userId) {
+  const t = await env.KV.get(keyNextType(userId));
+  if (t) await env.KV.delete(keyNextType(userId));
+  return t ? normalizeTypeWord(t) : null;
+}
+
 async function kvGetJson(env, key) {
   const raw = await env.KV.get(key);
   if (!raw) return null;
@@ -1489,11 +1532,14 @@ async function processLineWebhook(env, payload) {
           continue;
         }
 
-        // pending には「そのまま」格納（URL化は posts出力時にやる）
+                // ✅ NEXT:type が設定されていれば、この画像の行き先を先に確定（自動で1回消費）
+        const forcedNextType = await consumeNextType(env, userId);
+
+// pending には「そのまま」格納（URL化は posts出力時にやる）
         await kvPutJson(
           env,
           keyPendingImage(userId),
-          { image_src: stored.value, stage: "await_confirm_or_text", forcedType: null, gen: null },
+          { image_src: stored.value, stage: "await_confirm_or_text", forcedType: forcedNextType || null, gen: null },
           TTL_PENDING
         );
 
@@ -1504,7 +1550,7 @@ async function processLineWebhook(env, payload) {
             await lineReply(
               env,
               replyToken,
-              `📷 画像を保存しました（R2）。\n画像が大きいため自動読取はスキップしました。\n続けて本文（に:/N:/A:/あ:/V: または T:news 等）を送ってください。`,
+              ((forcedNextType ? `📷 画像を保存しました（R2）。\n画像が大きいため自動読取はスキップしました。\n行き先は ${forcedNextType.toUpperCase()} に確定済みです。\n続けて本文（に:/N:/A:/あ:/V:）を送ってください。` : `📷 画像を保存しました（R2）。\n画像が大きいため自動読取はスキップしました。\n続けて本文（に:/N:/A:/あ:/V: または T:news 等）を送ってください。`)),
               userId
             );
           }
@@ -1524,20 +1570,26 @@ async function processLineWebhook(env, payload) {
           continue;
         }
 
-        const type = (gen.type || "voice").toLowerCase();
+        let type = ((forcedNextType || gen.type) || "voice").toLowerCase();
         const date = gen.date || todayJstDatePadded();
 
         const minConf = clampFloat(env.VISION_AUTOPOST_MIN_CONF, 0.85, 0.0, 1.0);
         const minVoiceConf = clampFloat(env.VISION_AUTOPOST_VOICE_MIN_CONF, 0.9, 0.0, 1.0);
         const conf = Number(gen.confidence ?? 0);
-        const canAutoPostNewsArchive = gen.hasEvent && (type === "news" || type === "archive") && conf >= minConf;
-        const canAutoPostVoice = !gen.hasEvent && type === "voice" && conf >= minVoiceConf;
+        let canAutoPostNewsArchive = gen.hasEvent && (type === "news" || type === "archive") && conf >= minConf;
+        let canAutoPostVoice = !gen.hasEvent && type === "voice" && conf >= minVoiceConf;
+
+        // ✅ 行き先を手動確定している場合は、自動投稿は行わない（本文 or OK を待つ）
+        if (forcedNextType) {
+          canAutoPostNewsArchive = false;
+          canAutoPostVoice = false;
+        }
 
         // pending に gen を載せる
         await kvPutJson(
           env,
           keyPendingImage(userId),
-          { image_src: stored.value, stage: "await_confirm_or_text", forcedType: null, gen: { ...gen, type, date } },
+          { image_src: stored.value, stage: "await_confirm_or_text", forcedType: forcedNextType || null, gen: { ...gen, type, date } },
           TTL_PENDING
         );
 
@@ -1745,7 +1797,14 @@ async function processLineWebhook(env, payload) {
           continue;
         }
 
-        const cmd = parseTypeOnlyCommand(text);
+        const nextTypeCmd = parseNextTypeCommand(text);
+        if (nextTypeCmd) {
+          await setNextType(env, userId, nextTypeCmd);
+          if (replyToken) await lineReply(env, replyToken, `✅ 次の画像の行き先を ${nextTypeCmd.toUpperCase()} に確定しました。続けて画像を送ってください。`, userId);
+          continue;
+        }
+
+const cmd = parseTypeOnlyCommand(text);
         const pendingImg = await kvGetJson(env, keyPendingImage(userId));
 
         if (pendingImg && cmd) {
@@ -1813,7 +1872,14 @@ async function processLineWebhook(env, payload) {
         }
 
         // 通常投稿ロジック
-        const { type, content } = detectTypeAndContent(text);
+        let { type, content, explicit } = detectTypeAndContent(text);
+        // ✅ 画像が pending で、かつ NEXT/T: で種別が固定されている場合
+        //    ここで type を強制（ただし本文側で明示プレフィックス指定があるときは本文を優先）
+        const pendingImageObj0 = await kvGetJson(env, keyPendingImage(userId));
+        if (pendingImageObj0?.forcedType && !explicit) {
+          type = pendingImageObj0.forcedType;
+        }
+
         const date = extractDatePadded(content) || todayJstDatePadded();
         const urlInText = extractUrl(content);
         const contentNoUrl = urlInText ? content.replace(urlInText, "").trim() : content;
