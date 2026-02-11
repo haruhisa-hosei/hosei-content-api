@@ -179,7 +179,9 @@ function keyPendingImage(userId) {
 function keyPendingVideo(userId) {
   return `pending_video:${userId}`;
 }
-
+function keyPendingText(userId) {
+  return `pending_text:${userId}`;
+}
 // -----------------------------
 // ✅ Next-type KV (set destination before sending image)
 //  - User can send: NEXT:voice / NEXT:news / NEXT:archive (also 日本語)
