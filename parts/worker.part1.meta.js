@@ -49,7 +49,7 @@
 //   VISION_AUTOPOST_VOICE_MIN_CONF = "0.90"
 
 const VERSION =
-  "hosei-content-api-2026-02-09-r2image_split+news_prefix_fix+import_donothing+image_src_normalize";
+  "hosei-content-api-2026-02-11-r2image_split+news_prefix_fix+import_donothing+image_src_normalize+voice_date_posted_priority";
 
 const CSV = {
   news: "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSkBOovAHzdZWtA0Z-KRe27h5ZzGFi5Bq2G7Bp0Mv4sQ-2C9urIYy8oR9IaMf7xdSR9M_iww2zMbG-/pub?gid=0&single=true&output=csv",
