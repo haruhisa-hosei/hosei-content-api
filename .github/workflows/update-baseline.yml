@@ -1,0 +1,30 @@
+name: Update Baseline (baseline/worker.js <= src/worker.js)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy src -> baseline
+        run: |
+          mkdir -p baseline
+          cp src/worker.js baseline/worker.js
+
+      - name: Commit & push baseline/worker.js
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add baseline/worker.js
+          git diff --cached --quiet && echo "No changes" && exit 0
+
+          git commit -m "Update baseline/worker.js from src/worker.js"
+          git push
