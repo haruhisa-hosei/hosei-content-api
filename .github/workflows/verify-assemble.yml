@@ -20,5 +20,17 @@ jobs:
       - name: Assemble
         run: node tools/build-worker.mjs
 
-      - name: Diff (baseline vs built)
-        run: diff -u baseline/worker.js src/worker.js
+      - name: Build actual patch
+        run: |
+          diff -u baseline/worker.js src/worker.js > actual.patch || true
+
+      - name: Verify patch matches intent
+        run: |
+          # expected.patch が空なら「差分ゼロ」だけ許可
+          if [ ! -s intent/expected.patch ]; then
+            diff -u baseline/worker.js src/worker.js
+            exit 0
+          fi
+
+          # 期待パッチと完全一致のみ許可
+          diff -u intent/expected.patch actual.patch
