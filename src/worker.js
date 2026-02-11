@@ -1571,7 +1571,8 @@ async function processLineWebhook(env, payload) {
         }
 
         let type = ((forcedNextType || gen.type) || "voice").toLowerCase();
-        const date = gen.date || todayJstDatePadded();
+        // voice は「投稿日（実行日）」を最優先：画像から日付が取れても、本文に日付が無い限り today を使う
+        const date = (type === "voice") ? todayJstDatePadded() : (gen.date || todayJstDatePadded());
 
         const minConf = clampFloat(env.VISION_AUTOPOST_MIN_CONF, 0.85, 0.0, 1.0);
         const minVoiceConf = clampFloat(env.VISION_AUTOPOST_VOICE_MIN_CONF, 0.9, 0.0, 1.0);
