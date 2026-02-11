@@ -116,6 +116,8 @@ function normalizeBoolTextDefaultTrue(v) {
 // ✅ Debug KV (scoped last pointer)
 // -----------------------------
 const TTL_DEBUG = 24 * 60 * 60; // 24h
+// TEXT先行ルート用
+const TTL_PENDING_TEXT = 30 * 60; // 30分
 const DEBUG_SCOPES = new Set(["general", "openai", "gemini", "line", "db"]);
 
 function normalizeDebugScope(raw) {
@@ -1157,7 +1159,9 @@ function keyPendingImage(userId) {
 function keyPendingVideo(userId) {
   return `pending_video:${userId}`;
 }
-
+function keyPendingText(userId) {
+  return `pending_text:${userId}`;
+}
 // -----------------------------
 // ✅ Next-type KV (set destination before sending image)
 //  - User can send: NEXT:voice / NEXT:news / NEXT:archive (also 日本語)
@@ -1532,7 +1536,48 @@ async function processLineWebhook(env, payload) {
           continue;
         }
 
-                // ✅ NEXT:type が設定されていれば、この画像の行き先を先に確定（自動で1回消費）
+        
+        // -------------------------
+        // TEXT先行ルート: pending_text があれば Vision を使わずに投稿する
+        //  - TYPE明示テキストでAI生成 → その後の画像で合体して確定
+        // -------------------------
+        const pendingTextObj = await kvGetJson(env, keyPendingText(userId));
+        if (pendingTextObj?.stage === "await_image" && pendingTextObj?.type && pendingTextObj?.date) {
+          if (stored.kind === "github") {
+            const finalType = pendingTextObj.type;
+            const date = pendingTextObj.date;
+            const view_date = pendingTextObj.view_date || viewDateFromPadded(date);
+
+            const row = {
+              type: finalType,
+              date,
+              view_date,
+              ja_html: nz(pendingTextObj.ja_html),
+              en_html: nz(pendingTextObj.en_html),
+              ja_link_text: nz(pendingTextObj.ja_link_text),
+              ja_link_href: nz(pendingTextObj.ja_link_href),
+              en_link_text: nz(pendingTextObj.en_link_text),
+              en_link_href: nz(pendingTextObj.en_link_href),
+              image_src: stored.value,
+              image_kind: (finalType === "voice") ? "voice" : null,
+              enabled: "TRUE",
+              media_type: "image",
+              media_src: null,
+              poster_src: null,
+              legacy_key: pendingTextObj.legacy_key || makeLegacyKey(finalType, date, `${stored.value}:${nz(pendingTextObj.ja_html)}`),
+            };
+
+            const newId = await insertPost(env, row);
+            await env.KV.delete(keyPendingText(userId));
+
+            if (replyToken) {
+              await lineReply(env, replyToken, `✅ 投稿しました (ID:${newId ?? "?"})\n[${finalType.toUpperCase()}] date=${date}\n（TEXT先行ルート / Visionなし）`, userId);
+            }
+            continue;
+          }
+        }
+
+        // ✅ NEXT:type が設定されていれば、この画像の行き先を先に確定（自動で1回消費）
         const forcedNextType = await consumeNextType(env, userId);
 
 // pending には「そのまま」格納（URL化は posts出力時にやる）
@@ -1805,6 +1850,56 @@ async function processLineWebhook(env, payload) {
           continue;
         }
 
+
+        // -------------------------
+        // pending_text: 画像待ち確定/破棄コマンド
+        //  - 「送信」: 画像なしで投稿
+        //  - 「取消」: pending_text を破棄
+        // -------------------------
+        const pt = await kvGetJson(env, keyPendingText(userId));
+        if (pt?.stage === "await_image") {
+          if (/^(送信|確定|post|ok)$/i.test(text)) {
+            const finalType = pt.type;
+            const date = pt.date;
+            const view_date = pt.view_date || viewDateFromPadded(date);
+
+            const row = {
+              type: finalType,
+              date,
+              view_date,
+              ja_html: nz(pt.ja_html),
+              en_html: nz(pt.en_html),
+              ja_link_text: nz(pt.ja_link_text),
+              ja_link_href: nz(pt.ja_link_href),
+              en_link_text: nz(pt.en_link_text),
+              en_link_href: nz(pt.en_link_href),
+              image_src: null,
+              image_kind: null,
+              enabled: "TRUE",
+              media_type: "image",
+              media_src: null,
+              poster_src: null,
+              legacy_key: pt.legacy_key || makeLegacyKey(finalType, date, `noimg:${nz(pt.ja_html)}`),
+            };
+
+            const newId = await insertPost(env, row);
+            await env.KV.delete(keyPendingText(userId));
+            if (replyToken) await lineReply(env, replyToken, `✅ 投稿しました (ID:${newId ?? "?"})\n[${finalType.toUpperCase()}] date=${date}\n（画像なし確定）`, userId);
+            continue;
+          }
+
+          if (/^(取消|キャンセル|cancel)$/i.test(text)) {
+            await env.KV.delete(keyPendingText(userId));
+            if (replyToken) await lineReply(env, replyToken, "🟡 画像待ちをキャンセルしました。", userId);
+            continue;
+          }
+
+          if (replyToken) {
+            await lineReply(env, replyToken, "⚠️ いまは画像待ち中です。画像を送るか、「送信」で画像なし確定、「取消」で破棄してください。", userId);
+          }
+          continue;
+        }
+
 const cmd = parseTypeOnlyCommand(text);
         const pendingImg = await kvGetJson(env, keyPendingImage(userId));
 
@@ -1893,7 +1988,44 @@ const cmd = parseTypeOnlyCommand(text);
           ai = { ja: contentNoUrl, en: "", btnJa: "詳細を見る", btnEn: "View Details" };
         }
 
-        const pendingImageObj = await kvGetJson(env, keyPendingImage(userId));
+        
+        // -------------------------
+        // TEXT先行ルート（TYPE明示あり）:
+        //  - 画像がまだ無い場合は、いったん本文AI生成結果をKVに保存して「画像待ち」にする
+        //  - 次に画像が来たら Vision を使わず、この本文と合体して投稿
+        // -------------------------
+        if (explicit) {
+          const pendingImageNow = await kvGetJson(env, keyPendingImage(userId));
+          const pendingVideoNow = await kvGetJson(env, keyPendingVideo(userId));
+          if (!pendingImageNow && !(pendingVideoNow?.stage === "await_text")) {
+            const legacy_key = makeLegacyKey(type, date, `${short(contentNoUrl, 60)}`);
+            await kvPutJson(
+              env,
+              keyPendingText(userId),
+              {
+                stage: "await_image",
+                type,
+                date,
+                view_date: viewDateFromPadded(date),
+                ja_html: ai.ja,
+                en_html: ai.en,
+                ja_link_text: urlInText ? (ai.btnJa || "詳細を見る") : "",
+                ja_link_href: urlInText || "",
+                en_link_text: urlInText ? (ai.btnEn || "View Details") : "",
+                en_link_href: urlInText || "",
+                legacy_key,
+              },
+              TTL_PENDING_TEXT
+            );
+
+            if (replyToken) {
+              await lineReply(env, replyToken, `📝 本文を受け取りました（${type.toUpperCase()}）。\n続けて画像を送ると合体して投稿します。\n画像なしで投稿する場合は「送信」、やめる場合は「取消」。`, userId);
+            }
+            continue;
+          }
+        }
+
+const pendingImageObj = await kvGetJson(env, keyPendingImage(userId));
         if (pendingImageObj) await env.KV.delete(keyPendingImage(userId));
         const pendingImageSrc = pendingImageObj?.image_src || null;
 
