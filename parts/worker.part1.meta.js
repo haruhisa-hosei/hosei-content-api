@@ -116,6 +116,8 @@ function normalizeBoolTextDefaultTrue(v) {
 // ✅ Debug KV (scoped last pointer)
 // -----------------------------
 const TTL_DEBUG = 24 * 60 * 60; // 24h
+// TEXT先行ルート用
+const TTL_PENDING_TEXT = 30 * 60; // 30分
 const DEBUG_SCOPES = new Set(["general", "openai", "gemini", "line", "db"]);
 
 function normalizeDebugScope(raw) {
