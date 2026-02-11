@@ -1,0 +1,38 @@
+name: Promote Built src/worker.js
+
+on:
+  workflow_dispatch:
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Guard: intent must not be empty
+        run: |
+          if ! grep -vE '^\s*($|#)' intent/parts.txt | grep -q .; then
+            echo "intent/parts.txt is empty. Refusing to promote."
+            exit 1
+          fi
+
+      - name: Assemble (parts -> src/worker.js)
+        run: node tools/build-worker.mjs
+
+      - name: Show diff (baseline vs built)
+        run: |
+          diff -u baseline/worker.js src/worker.js || true
+
+      - name: Commit updated src/worker.js to main
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/worker.js intent/parts.txt
+          git commit -m "Promote built src/worker.js" || exit 0
+          git push
