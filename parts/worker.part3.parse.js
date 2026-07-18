@@ -143,6 +143,7 @@ The site definitions are strict:
 - archive = past performance record (past events)
 - voice = a personal murmur / the world as seen by the artist (landscapes, snapshots, backstage vibes)
 
+TODAY in JST is ${todayJstDatePadded()}. Use this exact date as the reference: event date after TODAY = news, before TODAY = archive.
 Classification rules:
 1) Only choose news/archive if the image clearly contains event-related text (flyer/poster/program) such as date/time/venue/price/program or event title. Otherwise choose voice.
 2) If event text exists, determine whether it is future (news) or past (archive) based on the date compared to TODAY in JST.
