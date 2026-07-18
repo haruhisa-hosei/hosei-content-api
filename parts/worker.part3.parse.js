@@ -156,6 +156,7 @@ Output fields:
 - en_html: natural English translation of ja_html. Use <br>. No URLs.
 - confidence: 0.0-1.0 overall confidence
 
+- Japanese era years MUST be converted: 令和N年 = 2018 + N (so 令和8年 = 2026, 令和9年 = 2027). Never output an era year as-is and never guess a Western year that contradicts this formula.
 Do NOT invent names/numbers not visible. Return STRICT JSON only.
 `.trim();
 
