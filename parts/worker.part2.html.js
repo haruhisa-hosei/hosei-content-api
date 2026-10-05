@@ -147,6 +147,7 @@ async function openaiResponsesText(env, { system, user, maxTokens = 350 }) {
       { role: "user", content: user },
     ],
     max_output_tokens: maxTokens,
+    reasoning: openaiReasoningFor(env, model),
   };
 
   const t0 = Date.now();
@@ -263,6 +264,7 @@ async function openaiResponsesJsonSchema(env, { system, user, schemaName = "hose
       },
     },
     max_output_tokens: maxTokens,
+    reasoning: openaiReasoningFor(env, model),
   };
 
   const t0 = Date.now();

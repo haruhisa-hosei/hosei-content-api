@@ -164,7 +164,14 @@ function shouldDebugBody(env) {
   return (env.DEBUG_LOG_BODY || "") === "1";
 }
 function getOpenAITextModel(env) {
-  return env.OPENAI_MODEL || "gpt-5-mini-2025-08-07";
+  // gpt-5-mini-2025-08-07 は 2026-12-11 提供終了のため後継（費用重視の gpt-5.6-luna）へ
+  return env.OPENAI_MODEL || "gpt-5.6-luna";
+}
+// 考える量（none / low / medium / high）。gpt-5 系のみ指定する。
+// 考える分も max_output_tokens に含まれるため、low にして本文が途中で切れるのを防ぐ
+function openaiReasoningFor(env, model) {
+  if (!/^gpt-5/.test(String(model || ""))) return undefined;
+  return { effort: env.OPENAI_REASONING_EFFORT || "low" };
 }
 function getOpenAIVisionModel(env) {
   return env.OPENAI_VISION_MODEL || env.OPENAI_MODEL || "gpt-4.1-mini";

@@ -1,10 +1,12 @@
 name = "hosei-content-api"
 main = "src/worker.js"
 compatibility_date = "2026-02-10"
+# ダッシュボードで追加した変数を消さない
+keep_vars = true
 
 [vars]
 # Models
-OPENAI_MODEL = "gpt-5-mini-2025-08-07"
+OPENAI_MODEL = "gpt-5.6-luna"
 OPENAI_VISION_MODEL = "gpt-4.1-mini"
 GEMINI_MODEL = "gemini-1.5-flash"
 
