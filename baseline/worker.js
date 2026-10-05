@@ -163,8 +163,23 @@ function shouldDebugOpenAI(env) {
 function shouldDebugBody(env) {
   return (env.DEBUG_LOG_BODY || "") === "1";
 }
+// 英訳で必ず使う固有名詞（読み違い・意訳を防ぐ）
+const EN_GLOSSARY = `Fixed English names (always use exactly these, never re-romanize or translate them):
+- 鳳聲晴久 = Haruhisa Hosei
+- 日本製鉄紀尾井小ホール / 日本製鉄 紀尾井小ホール = Nippon Steel Kioi Hall (Small Hall)
+- 日本製鉄紀尾井ホール = Nippon Steel Kioi Hall
+- 笛 (instrument) = fue (Japanese bamboo flute)
+- 篠笛 = shinobue / 能管 = nohkan`;
+
 function getOpenAITextModel(env) {
-  return env.OPENAI_MODEL || "gpt-5-mini-2025-08-07";
+  // gpt-5-mini-2025-08-07 は 2026-12-11 提供終了のため後継（費用重視の gpt-5.6-luna）へ
+  return env.OPENAI_MODEL || "gpt-5.6-luna";
+}
+// 考える量（none / low / medium / high）。gpt-5 系のみ指定する。
+// 考える分も max_output_tokens に含まれるため、low にして本文が途中で切れるのを防ぐ
+function openaiReasoningFor(env, model) {
+  if (!/^gpt-5/.test(String(model || ""))) return undefined;
+  return { effort: env.OPENAI_REASONING_EFFORT || "low" };
 }
 function getOpenAIVisionModel(env) {
   return env.OPENAI_VISION_MODEL || env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -431,6 +446,7 @@ async function openaiResponsesText(env, { system, user, maxTokens = 350 }) {
       { role: "user", content: user },
     ],
     max_output_tokens: maxTokens,
+    reasoning: openaiReasoningFor(env, model),
   };
 
   const t0 = Date.now();
@@ -547,6 +563,7 @@ async function openaiResponsesJsonSchema(env, { system, user, schemaName = "hose
       },
     },
     max_output_tokens: maxTokens,
+    reasoning: openaiReasoningFor(env, model),
   };
 
   const t0 = Date.now();
@@ -779,6 +796,7 @@ The site definitions are strict:
 - archive = past performance record (past events)
 - voice = a personal murmur / the world as seen by the artist (landscapes, snapshots, backstage vibes)
 
+TODAY in JST is ${todayJstDatePadded()}. Use this exact date as the reference: event date after TODAY = news, before TODAY = archive.
 Classification rules:
 1) Only choose news/archive if the image clearly contains event-related text (flyer/poster/program) such as date/time/venue/price/program or event title. Otherwise choose voice.
 2) If event text exists, determine whether it is future (news) or past (archive) based on the date compared to TODAY in JST.
@@ -792,6 +810,8 @@ Output fields:
 - en_html: natural English translation of ja_html. Use <br>. No URLs.
 - confidence: 0.0-1.0 overall confidence
 
+- Japanese era years MUST be converted: 令和N年 = 2018 + N (so 令和8年 = 2026, 令和9年 = 2027). Never output an era year as-is and never guess a Western year that contradicts this formula.
+${EN_GLOSSARY}
 Do NOT invent names/numbers not visible. Return STRICT JSON only.
 `.trim();
 
@@ -860,7 +880,7 @@ async function geminiGenerateText(env, prompt) {
 }
 
 async function geminiTranslateEn(env, jaText) {
-  const prompt = `Translate the following Japanese into natural English for a website (concise, no extra commentary). Output ONLY the English text.\n\nJapanese:\n${jaText}`;
+  const prompt = `Translate the following Japanese into natural English for a website (concise, no extra commentary). Output ONLY the English text.\n\n${EN_GLOSSARY}\n\nJapanese:\n${jaText}`;
   const en = await geminiGenerateText(env, prompt);
   return en.trim();
 }
@@ -904,7 +924,8 @@ Rules:
 - Output ONLY natural English text (no quotes, no markdown, no commentary)
 - Keep it concise and website-ready
 - Do NOT include any URL
-- Preserve meaning; do not add new info`;
+- Preserve meaning; do not add new info
+${EN_GLOSSARY}`;
 
       const userEn = `Japanese:\n${ja}\n\nTask: Translate into natural English. Output ONLY English.`;
 
@@ -942,7 +963,8 @@ Rules:
 - "btnJa"/"btnEn": button labels (use sensible defaults if no URL context)
 - Prefer single-line text (no line breaks unless necessary for <br>)
 - Always perform at least one minor edit to improve readability (punctuation/wording), unless the input is already perfect.
-- If the input contains a URL, do NOT include the URL in "ja"/"en".`;
+- If the input contains a URL, do NOT include the URL in "ja"/"en".
+${EN_GLOSSARY}`;
 
   const prompt2 = forNews
     ? `Input:\n${raw}\n\n(News item: keep it short, neutral, informative.)`
