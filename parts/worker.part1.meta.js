@@ -163,6 +163,14 @@ function shouldDebugOpenAI(env) {
 function shouldDebugBody(env) {
   return (env.DEBUG_LOG_BODY || "") === "1";
 }
+// 英訳で必ず使う固有名詞（読み違い・意訳を防ぐ）
+const EN_GLOSSARY = `Fixed English names (always use exactly these, never re-romanize or translate them):
+- 鳳聲晴久 = Haruhisa Hosei
+- 日本製鉄紀尾井小ホール / 日本製鉄 紀尾井小ホール = Nippon Steel Kioi Hall (Small Hall)
+- 日本製鉄紀尾井ホール = Nippon Steel Kioi Hall
+- 笛 (instrument) = fue (Japanese bamboo flute)
+- 篠笛 = shinobue / 能管 = nohkan`;
+
 function getOpenAITextModel(env) {
   // gpt-5-mini-2025-08-07 は 2026-12-11 提供終了のため後継（費用重視の gpt-5.6-luna）へ
   return env.OPENAI_MODEL || "gpt-5.6-luna";

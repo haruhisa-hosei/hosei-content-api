@@ -163,6 +163,14 @@ function shouldDebugOpenAI(env) {
 function shouldDebugBody(env) {
   return (env.DEBUG_LOG_BODY || "") === "1";
 }
+// 英訳で必ず使う固有名詞（読み違い・意訳を防ぐ）
+const EN_GLOSSARY = `Fixed English names (always use exactly these, never re-romanize or translate them):
+- 鳳聲晴久 = Haruhisa Hosei
+- 日本製鉄紀尾井小ホール / 日本製鉄 紀尾井小ホール = Nippon Steel Kioi Hall (Small Hall)
+- 日本製鉄紀尾井ホール = Nippon Steel Kioi Hall
+- 笛 (instrument) = fue (Japanese bamboo flute)
+- 篠笛 = shinobue / 能管 = nohkan`;
+
 function getOpenAITextModel(env) {
   // gpt-5-mini-2025-08-07 は 2026-12-11 提供終了のため後継（費用重視の gpt-5.6-luna）へ
   return env.OPENAI_MODEL || "gpt-5.6-luna";
@@ -803,6 +811,7 @@ Output fields:
 - confidence: 0.0-1.0 overall confidence
 
 - Japanese era years MUST be converted: 令和N年 = 2018 + N (so 令和8年 = 2026, 令和9年 = 2027). Never output an era year as-is and never guess a Western year that contradicts this formula.
+${EN_GLOSSARY}
 Do NOT invent names/numbers not visible. Return STRICT JSON only.
 `.trim();
 
@@ -871,7 +880,7 @@ async function geminiGenerateText(env, prompt) {
 }
 
 async function geminiTranslateEn(env, jaText) {
-  const prompt = `Translate the following Japanese into natural English for a website (concise, no extra commentary). Output ONLY the English text.\n\nJapanese:\n${jaText}`;
+  const prompt = `Translate the following Japanese into natural English for a website (concise, no extra commentary). Output ONLY the English text.\n\n${EN_GLOSSARY}\n\nJapanese:\n${jaText}`;
   const en = await geminiGenerateText(env, prompt);
   return en.trim();
 }
@@ -915,7 +924,8 @@ Rules:
 - Output ONLY natural English text (no quotes, no markdown, no commentary)
 - Keep it concise and website-ready
 - Do NOT include any URL
-- Preserve meaning; do not add new info`;
+- Preserve meaning; do not add new info
+${EN_GLOSSARY}`;
 
       const userEn = `Japanese:\n${ja}\n\nTask: Translate into natural English. Output ONLY English.`;
 
@@ -953,7 +963,8 @@ Rules:
 - "btnJa"/"btnEn": button labels (use sensible defaults if no URL context)
 - Prefer single-line text (no line breaks unless necessary for <br>)
 - Always perform at least one minor edit to improve readability (punctuation/wording), unless the input is already perfect.
-- If the input contains a URL, do NOT include the URL in "ja"/"en".`;
+- If the input contains a URL, do NOT include the URL in "ja"/"en".
+${EN_GLOSSARY}`;
 
   const prompt2 = forNews
     ? `Input:\n${raw}\n\n(News item: keep it short, neutral, informative.)`

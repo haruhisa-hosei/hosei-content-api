@@ -158,6 +158,7 @@ Output fields:
 - confidence: 0.0-1.0 overall confidence
 
 - Japanese era years MUST be converted: 令和N年 = 2018 + N (so 令和8年 = 2026, 令和9年 = 2027). Never output an era year as-is and never guess a Western year that contradicts this formula.
+${EN_GLOSSARY}
 Do NOT invent names/numbers not visible. Return STRICT JSON only.
 `.trim();
 
@@ -226,7 +227,7 @@ async function geminiGenerateText(env, prompt) {
 }
 
 async function geminiTranslateEn(env, jaText) {
-  const prompt = `Translate the following Japanese into natural English for a website (concise, no extra commentary). Output ONLY the English text.\n\nJapanese:\n${jaText}`;
+  const prompt = `Translate the following Japanese into natural English for a website (concise, no extra commentary). Output ONLY the English text.\n\n${EN_GLOSSARY}\n\nJapanese:\n${jaText}`;
   const en = await geminiGenerateText(env, prompt);
   return en.trim();
 }
@@ -270,7 +271,8 @@ Rules:
 - Output ONLY natural English text (no quotes, no markdown, no commentary)
 - Keep it concise and website-ready
 - Do NOT include any URL
-- Preserve meaning; do not add new info`;
+- Preserve meaning; do not add new info
+${EN_GLOSSARY}`;
 
       const userEn = `Japanese:\n${ja}\n\nTask: Translate into natural English. Output ONLY English.`;
 
@@ -308,7 +310,8 @@ Rules:
 - "btnJa"/"btnEn": button labels (use sensible defaults if no URL context)
 - Prefer single-line text (no line breaks unless necessary for <br>)
 - Always perform at least one minor edit to improve readability (punctuation/wording), unless the input is already perfect.
-- If the input contains a URL, do NOT include the URL in "ja"/"en".`;
+- If the input contains a URL, do NOT include the URL in "ja"/"en".
+${EN_GLOSSARY}`;
 
   const prompt2 = forNews
     ? `Input:\n${raw}\n\n(News item: keep it short, neutral, informative.)`
